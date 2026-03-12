@@ -1,0 +1,64 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: flash-sale-postgres
+    environment:
+      POSTGRES_USER: flashsale
+      POSTGRES_PASSWORD: flashsale123
+      POSTGRES_DB: flashsale
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flashsale"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app-1:
+    build: .
+    container_name: flash-sale-app-1
+    ports:
+      - "8081:8081"
+    environment:
+      FLASH_SALE_SERVER_PORT: 8081
+      FLASH_SALE_DATABASE_HOST: postgres
+      FLASH_SALE_DATABASE_PORT: 5432
+      FLASH_SALE_DATABASE_USER: flashsale
+      FLASH_SALE_DATABASE_PASSWORD: flashsale123
+      FLASH_SALE_DATABASE_DBNAME: flashsale
+      FLASH_SALE_DATABASE_SSLMODE: disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  app-2:
+    build: .
+    container_name: flash-sale-app-2
+    ports:
+      - "8082:8082"
+    environment:
+      FLASH_SALE_SERVER_PORT: 8082
+      FLASH_SALE_DATABASE_HOST: postgres
+      FLASH_SALE_DATABASE_PORT: 5432
+      FLASH_SALE_DATABASE_USER: flashsale
+      FLASH_SALE_DATABASE_PASSWORD: flashsale123
+      FLASH_SALE_DATABASE_DBNAME: flashsale
+      FLASH_SALE_DATABASE_SSLMODE: disable
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:alpine
+    container_name: flash-sale-nginx
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./web:/usr/share/nginx/html:ro
+    depends_on:
+      - app-1
+      - app-2
+
+volumes:
+  pgdata:
