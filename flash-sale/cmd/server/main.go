@@ -32,10 +32,15 @@ func main() {
 		log.Fatalf("Failed to auto migrate: %v", err)
 	}
 
-	// init layers
+	// user module
 	userRepo := user.NewRepository(db)
 	userService := user.NewService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHours)
 	userHandler := user.NewHandler(userService)
+
+	// product module
+	productRepo := product.NewRepository(db)
+	productService := product.NewService(productRepo)
+	productHandler := product.NewHandler(productService)
 
 	// setup router
 	r := gin.New()
@@ -54,12 +59,19 @@ func main() {
 	r.Use(gin.Recovery())
 
 	api := r.Group("/api/v1")
+	// public routes
 	publicGroup := api.Group("")
+	// auth routes
 	authGroup := api.Group("")
 	authGroup.Use(middleware.JWTAuth(cfg.JWT.Secret))
+	// admin routes
+	adminGroup := api.Group("")
+	adminGroup.Use(middleware.JWTAuth(cfg.JWT.Secret))
+	adminGroup.Use(middleware.AdminRequired())
 
 	// register routes
 	userHandler.RegisterRoutes(publicGroup, authGroup)
+	productHandler.RegisterRoutes(publicGroup, adminGroup)
 
 	// health check
 	r.GET("/health", func(c *gin.Context) {
