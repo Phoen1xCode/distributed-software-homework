@@ -15,9 +15,9 @@ type Product struct {
 }
 
 type CreateProductRequest struct {
-	Name        string  `json:"name"`
+	Name        string  `json:"name" binding:"required"`
 	Description string  `json:"description"`
-	Price       float64 `json:"price"`
+	Price       float64 `json:"price" binding:"required,gt=0"`
 	Category    string  `json:"category"`
 	ImageURL    string  `json:"image_url"`
 }

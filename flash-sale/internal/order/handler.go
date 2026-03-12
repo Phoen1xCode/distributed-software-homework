@@ -18,9 +18,9 @@ func NewHandler(service *OrderService) *Handler {
 }
 
 func (h *Handler) CreateOrder(c *gin.Context) {
-	userID, exists := c.Get("userID")
+	userID, exists := c.Get("user_id")
 	if !exists {
-		response.Unauthorized(c, "Unauthorized")
+		response.Unauthorized(c, "unauthorized")
 		return
 	}
 
@@ -31,30 +31,31 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 	}
 
 	o, err := h.service.CreateOrder(userID.(uint), &req)
-
 	if err != nil {
 		if errors.Is(err, ErrProductNotFound) {
 			response.NotFound(c, err.Error())
 			return
 		}
-
 		if errors.Is(err, ErrProductOffSale) {
 			response.Error(c, http.StatusConflict, err.Error())
 			return
 		}
-
 		if errors.Is(err, ErrStockInsufficient) {
 			response.Error(c, http.StatusConflict, err.Error())
 			return
 		}
-
 		response.InternalServerError(c, "failed to create order")
+		return
 	}
 	response.Success(c, o)
 }
 
 func (h *Handler) ListOrders(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		response.Unauthorized(c, "unauthorized")
+		return
+	}
 
 	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
 	pageSize, _ := strconv.Atoi(c.DefaultQuery("page_size", "10"))
@@ -74,7 +75,11 @@ func (h *Handler) ListOrders(c *gin.Context) {
 }
 
 func (h *Handler) GetOrderByID(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		response.Unauthorized(c, "unauthorized")
+		return
+	}
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
@@ -99,7 +104,11 @@ func (h *Handler) GetOrderByID(c *gin.Context) {
 }
 
 func (h *Handler) CancelOrder(c *gin.Context) {
-	userID, _ := c.Get("user_id")
+	userID, exists := c.Get("user_id")
+	if !exists {
+		response.Unauthorized(c, "unauthorized")
+		return
+	}
 
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {

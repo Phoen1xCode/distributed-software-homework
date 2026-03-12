@@ -6,6 +6,8 @@ import (
 	"gorm.io/gorm"
 )
 
+const maxDeductRetries = 3
+
 var (
 	ErrInventoryNotFound = errors.New("inventory not found")
 	ErrStockInsufficient = errors.New("stock insufficient")
@@ -17,6 +19,11 @@ type InventoryService struct {
 
 func NewService(repo *Repository) *InventoryService {
 	return &InventoryService{repo: repo}
+}
+
+// WithDB returns a copy of the service backed by the given *gorm.DB (e.g. a transaction).
+func (s *InventoryService) WithDB(db *gorm.DB) *InventoryService {
+	return &InventoryService{repo: NewRepository(db)}
 }
 
 func (s *InventoryService) GetByProductID(productID uint) (*Inventory, error) {
@@ -63,26 +70,29 @@ func (s *InventoryService) SetInventory(productID uint, req *SetInventoryRequest
 }
 
 func (s *InventoryService) Deduct(productID uint, quantity int) error {
-	inv, err := s.repo.GetByProductID(productID)
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrInventoryNotFound
+	for i := 0; i < maxDeductRetries; i++ {
+		inv, err := s.repo.GetByProductID(productID)
+		if err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrInventoryNotFound
+			}
+			return err
 		}
-		return err
-	}
 
-	if inv.Available < quantity {
-		return ErrStockInsufficient
-	}
-
-	err = s.repo.DeductWithLock(productID, quantity, inv.Version)
-	if err != nil {
-		if errors.Is(err, ErrOptimisticLock) {
+		if inv.Available < quantity {
 			return ErrStockInsufficient
 		}
-		return err
+
+		err = s.repo.DeductWithLock(productID, quantity, inv.Version)
+		if err != nil {
+			if errors.Is(err, ErrOptimisticLock) {
+				continue // retry with fresh version
+			}
+			return err
+		}
+		return nil
 	}
-	return nil
+	return ErrStockInsufficient
 }
 
 func (s *InventoryService) Return(productID uint, quantity int) error {

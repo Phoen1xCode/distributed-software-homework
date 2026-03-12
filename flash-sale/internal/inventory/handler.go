@@ -88,5 +88,5 @@ func (h *Handler) Deduct(c *gin.Context) {
 func (h *Handler) RegisterRoutes(publicGroup, authGroup, adminGroup *gin.RouterGroup) {
 	publicGroup.GET("/inventory/:product_id", h.Get)
 	adminGroup.PUT("/inventory/:product_id", h.Set)
-	authGroup.POST("/inventory/:product_id/deduct", h.Deduct)
+	adminGroup.POST("/inventory/:product_id/deduct", h.Deduct)
 }

@@ -1,9 +1,9 @@
 package order
 
 import (
+	"crypto/rand"
 	"errors"
 	"fmt"
-	"math/rand"
 	"time"
 
 	"flash-sale/internal/inventory"
@@ -36,7 +36,7 @@ func NewService(repo *Repository, productSvc *product.ProductService, inventoryS
 }
 
 func (s *OrderService) CreateOrder(userID uint, req *CreateOrderRequest) (*Order, error) {
-	// 1. Check product exists and is on sale
+	// 1. Check product exists and is on sale (read-only, outside transaction)
 	p, err := s.productService.GetProductByID(req.ProductID)
 	if err != nil {
 		if errors.Is(err, product.ErrProductNotFound) {
@@ -48,18 +48,7 @@ func (s *OrderService) CreateOrder(userID uint, req *CreateOrderRequest) (*Order
 		return nil, ErrProductOffSale
 	}
 
-	// 2. Deduct inventory (optimistic lock)
-	if err := s.inventoryService.Deduct(req.ProductID, req.Quantity); err != nil {
-		if errors.Is(err, inventory.ErrInventoryNotFound) {
-			return nil, ErrStockInsufficient
-		}
-		if errors.Is(err, inventory.ErrStockInsufficient) {
-			return nil, ErrStockInsufficient
-		}
-		return nil, err
-	}
-
-	// 3. Create order
+	// 2. Deduct inventory and create order atomically in one transaction
 	o := &Order{
 		OrderNo:    generateOrderNo(),
 		UserID:     userID,
@@ -69,9 +58,20 @@ func (s *OrderService) CreateOrder(userID uint, req *CreateOrderRequest) (*Order
 		Status:     0,
 	}
 
-	if err := s.repo.Create(o); err != nil {
-		// Rollback: return inventory
-		_ = s.inventoryService.Return(req.ProductID, req.Quantity)
+	err = s.repo.Transaction(func(tx *gorm.DB) error {
+		txInventory := s.inventoryService.WithDB(tx)
+		if err := txInventory.Deduct(req.ProductID, req.Quantity); err != nil {
+			return err
+		}
+		if err := s.repo.CreateTx(tx, o); err != nil {
+			return err
+		}
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, inventory.ErrInventoryNotFound) || errors.Is(err, inventory.ErrStockInsufficient) {
+			return nil, ErrStockInsufficient
+		}
 		return nil, err
 	}
 
@@ -97,27 +97,43 @@ func (s *OrderService) ListOrderByUser(userID uint, page, pageSize int) ([]Order
 }
 
 func (s *OrderService) CancelOrder(userID, orderID uint) (*Order, error) {
-	o, err := s.repo.GetOrderByID(orderID)
+	var o *Order
+	err := s.repo.Transaction(func(tx *gorm.DB) error {
+		// Lock the order row to prevent concurrent cancellation
+		var err error
+		o, err = s.repo.GetOrderByIDForUpdate(tx, orderID)
+		if err != nil {
+			return err
+		}
+		if o.UserID != userID {
+			return ErrNotOrderOwner
+		}
+		if o.Status != 0 {
+			return ErrOrderNotPending
+		}
+
+		// Return inventory within the same transaction
+		txInventory := s.inventoryService.WithDB(tx)
+		if err := txInventory.Return(o.ProductID, o.Quantity); err != nil {
+			return err
+		}
+
+		// Update order status to cancelled
+		if err := s.repo.UpdateStatusTx(tx, orderID, 2); err != nil {
+			return err
+		}
+		return nil
+	})
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrOrderNotFound
 		}
-		return nil, err
-	}
-	if o.UserID != userID {
-		return nil, ErrNotOrderOwner
-	}
-	if o.Status != 0 {
-		return nil, ErrOrderNotPending
-	}
-
-	// Return inventory
-	if err := s.inventoryService.Return(o.ProductID, o.Quantity); err != nil {
-		return nil, err
-	}
-
-	// Update order status to cancelled
-	if err := s.repo.UpdateStatus(orderID, 2); err != nil {
+		if errors.Is(err, ErrNotOrderOwner) {
+			return nil, ErrNotOrderOwner
+		}
+		if errors.Is(err, ErrOrderNotPending) {
+			return nil, ErrOrderNotPending
+		}
 		return nil, err
 	}
 
@@ -126,5 +142,7 @@ func (s *OrderService) CancelOrder(userID, orderID uint) (*Order, error) {
 }
 
 func generateOrderNo() string {
-	return fmt.Sprintf("%s%06d", time.Now().Format("20060102150405"), rand.Intn(1000000))
+	b := make([]byte, 8)
+	rand.Read(b)
+	return fmt.Sprintf("%s%x", time.Now().Format("20060102150405"), b)
 }
