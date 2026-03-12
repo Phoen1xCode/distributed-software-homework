@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-func NewPostgresDB(dsn string) (*gorm.DB, error) {
+func NewPostgres(dsn string) (*gorm.DB, error) {
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Info), // Enable detailed logging
 	})

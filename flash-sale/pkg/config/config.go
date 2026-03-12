@@ -42,7 +42,7 @@ type JWTConfig struct {
 }
 
 func (d *DatabaseConfig) DSN() string {
-	return fmt.Sprintf("%s://%s:%s@%s:%d/%s?sslmode=%s", d.Driver, d.User, d.Password, d.Host, d.Port, d.DBName, d.SSLMode)
+	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s", d.User, d.Password, d.Host, d.Port, d.DBName, d.SSLMode)
 }
 
 func LoadConfig(path string) (*Config, error) {
