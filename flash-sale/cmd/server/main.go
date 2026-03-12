@@ -1,7 +1,10 @@
 package main
 
 import (
+	"flash-sale/internal/inventory"
 	"flash-sale/internal/middleware"
+	"flash-sale/internal/order"
+	"flash-sale/internal/product"
 	"flash-sale/internal/user"
 	"flash-sale/pkg/config"
 	"flash-sale/pkg/database"
@@ -25,7 +28,7 @@ func main() {
 	}
 
 	// auto migrate
-	if err := db.AutoMigrate(&user.User{}); err != nil {
+	if err := db.AutoMigrate(&user.User{}, &product.Product{}, &inventory.Inventory{}, &order.Order{}); err != nil {
 		log.Fatalf("Failed to auto migrate: %v", err)
 	}
 
