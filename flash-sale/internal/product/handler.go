@@ -2,6 +2,7 @@ package product
 
 import (
 	"errors"
+	"flash-sale/internal/inventory"
 	"flash-sale/pkg/response"
 	"strconv"
 
@@ -9,11 +10,12 @@ import (
 )
 
 type Handler struct {
-	service *ProductService
+	service          *ProductService
+	inventoryService *inventory.InventoryService
 }
 
-func NewHandler(service *ProductService) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *ProductService, inventoryService *inventory.InventoryService) *Handler {
+	return &Handler{service: service, inventoryService: inventoryService}
 }
 
 func (h *Handler) CreateProduct(c *gin.Context) {
@@ -49,7 +51,13 @@ func (h *Handler) GetProductByID(c *gin.Context) {
 		return
 	}
 
-	response.Success(c, p)
+	// Fetch inventory for the product
+	var inv *inventory.Inventory
+	if h.inventoryService != nil {
+		inv, _ = h.inventoryService.GetByProductID(uint(id))
+	}
+
+	response.Success(c, ProductDetailResponse{Product: *p, Inventory: inv})
 }
 
 func (h *Handler) List(c *gin.Context) {

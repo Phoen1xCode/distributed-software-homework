@@ -37,15 +37,15 @@ func main() {
 	userService := user.NewService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHours)
 	userHandler := user.NewHandler(userService)
 
-	// product module
-	productRepo := product.NewRepository(db)
-	productService := product.NewService(productRepo)
-	productHandler := product.NewHandler(productService)
-
 	// inventory module
 	inventoryRepo := inventory.NewRepository(db)
 	inventoryService := inventory.NewService(inventoryRepo)
 	inventoryHandler := inventory.NewHandler(inventoryService)
+
+	// product module
+	productRepo := product.NewRepository(db)
+	productService := product.NewService(productRepo)
+	productHandler := product.NewHandler(productService, inventoryService)
 
 	// setup router
 	r := gin.New()
