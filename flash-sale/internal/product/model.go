@@ -13,3 +13,27 @@ type Product struct {
 	CreatedAt   time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt   time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
+
+type CreateProductRequest struct {
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Price       float64 `json:"price"`
+	Category    string  `json:"category"`
+	ImageURL    string  `json:"image_url"`
+}
+
+type CreateProductResponse struct {
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Price       float64 `json:"price"`
+	Category    string  `json:"category"`
+	ImageURL    string  `json:"image_url"`
+	Status      *int16  `json:"status"`
+}
+
+// ProductDetailResponse is used by GET /products/:id to return product with inventory.
+// The inventory field is populated after the Inventory module is wired.
+type ProductDetailResponse struct {
+	Product   Product     `json:"product"`
+	Inventory interface{} `json:"inventory,omitempty"`
+}

@@ -46,3 +46,19 @@ func Forbidden(c *gin.Context, message string) {
 func InternalServerError(c *gin.Context, message string) {
 	Error(c, http.StatusInternalServerError, message)
 }
+
+type PaginatedData struct {
+	Items    interface{} `json:"items"`
+	Total    int64       `json:"total"`
+	Page     int64       `json:"page"`
+	PageSize int64       `json:"page_size"`
+}
+
+func SuccessPaginated(c *gin.Context, items interface{}, total int64, page, pageSize int64) {
+	Success(c, PaginatedData{
+		Items:    items,
+		Total:    total,
+		Page:     page,
+		PageSize: pageSize,
+	})
+}
