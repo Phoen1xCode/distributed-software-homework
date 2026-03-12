@@ -12,3 +12,12 @@ type Inventory struct {
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
+
+type SetInventoryRequest struct {
+	Total int `json:"total" binding:"required,gte=0"`
+}
+
+type DeductRequest struct {
+	Quantity int `json:"quantity" binding:"required,gt=0"`
+}
+
