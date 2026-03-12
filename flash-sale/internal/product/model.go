@@ -31,6 +31,15 @@ type CreateProductResponse struct {
 	Status      *int16  `json:"status"`
 }
 
+type UpdateProductRequest struct {
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	Price       float64 `json:"price" binding:"omitempty,gt=0"`
+	Category    string  `json:"category"`
+	ImageURL    string  `json:"image_url"`
+	Status      *int16  `json:"status"`
+}
+
 // ProductDetailResponse is used by GET /products/:id to return product with inventory.
 // The inventory field is populated after the Inventory module is wired.
 type ProductDetailResponse struct {
