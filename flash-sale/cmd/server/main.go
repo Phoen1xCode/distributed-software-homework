@@ -42,6 +42,11 @@ func main() {
 	productService := product.NewService(productRepo)
 	productHandler := product.NewHandler(productService)
 
+	// inventory module
+	inventoryRepo := inventory.NewRepository(db)
+	inventoryService := inventory.NewService(inventoryRepo)
+	inventoryHandler := inventory.NewHandler(inventoryService)
+
 	// setup router
 	r := gin.New()
 
@@ -72,6 +77,7 @@ func main() {
 	// register routes
 	userHandler.RegisterRoutes(publicGroup, authGroup)
 	productHandler.RegisterRoutes(publicGroup, adminGroup)
+	inventoryHandler.RegisterRoutes(publicGroup, authGroup, adminGroup)
 
 	// health check
 	r.GET("/health", func(c *gin.Context) {
