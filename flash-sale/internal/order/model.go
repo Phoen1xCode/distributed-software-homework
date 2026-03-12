@@ -13,3 +13,8 @@ type Order struct {
 	CreatedAt  time.Time `gorm:"autoCreateTime" json:"created_at"`
 	UpdatedAt  time.Time `gorm:"autoUpdateTime" json:"updated_at"`
 }
+
+type CreateOrderRequest struct {
+	ProductID uint `json:"product_id" binding:"required"`
+	Quantity  int  `json:"quantity" binding:"required,min=1"`
+}
