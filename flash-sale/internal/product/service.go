@@ -6,6 +6,8 @@ import (
 	"gorm.io/gorm"
 )
 
+var _ ProductServicer = (*ProductService)(nil)
+
 var (
 	ErrProductNotFound = errors.New("product not found")
 )

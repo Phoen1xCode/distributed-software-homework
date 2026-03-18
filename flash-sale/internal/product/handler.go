@@ -10,11 +10,11 @@ import (
 )
 
 type Handler struct {
-	service          *ProductService
+	service          ProductServicer
 	inventoryService *inventory.InventoryService
 }
 
-func NewHandler(service *ProductService, inventoryService *inventory.InventoryService) *Handler {
+func NewHandler(service ProductServicer, inventoryService *inventory.InventoryService) *Handler {
 	return &Handler{service: service, inventoryService: inventoryService}
 }
 
