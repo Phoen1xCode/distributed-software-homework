@@ -16,6 +16,17 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    image: redis:7-alpine
+    container_name: flash-sale-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   app-1:
     build: .
     container_name: flash-sale-app-1
@@ -29,8 +40,12 @@ services:
       FLASH_SALE_DATABASE_PASSWORD: flashsale123
       FLASH_SALE_DATABASE_DBNAME: flashsale
       FLASH_SALE_DATABASE_SSLMODE: disable
+      FLASH_SALE_REDIS_HOST: redis
+      FLASH_SALE_REDIS_PORT: 6379
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   app-2:
@@ -46,8 +61,12 @@ services:
       FLASH_SALE_DATABASE_PASSWORD: flashsale123
       FLASH_SALE_DATABASE_DBNAME: flashsale
       FLASH_SALE_DATABASE_SSLMODE: disable
+      FLASH_SALE_REDIS_HOST: redis
+      FLASH_SALE_REDIS_PORT: 6379
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   nginx:

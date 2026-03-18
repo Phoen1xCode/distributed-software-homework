@@ -6,6 +6,7 @@ import (
 	"flash-sale/internal/order"
 	"flash-sale/internal/product"
 	"flash-sale/internal/user"
+	"flash-sale/pkg/cache"
 	"flash-sale/pkg/config"
 	"flash-sale/pkg/database"
 	"fmt"
@@ -27,6 +28,10 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
+	// connect to redis
+	redisClient := cache.NewRedisClient(cfg.Redis)
+	defer redisClient.Close()
+
 	// auto migrate
 	if err := db.AutoMigrate(&user.User{}, &product.Product{}, &inventory.Inventory{}, &order.Order{}); err != nil {
 		log.Fatalf("Failed to auto migrate: %v", err)
@@ -45,7 +50,8 @@ func main() {
 	// product module
 	productRepo := product.NewRepository(db)
 	productService := product.NewService(productRepo)
-	productHandler := product.NewHandler(productService, inventoryService)
+	cachedProductService := product.NewCachedService(productService, redisClient)
+	productHandler := product.NewHandler(cachedProductService, inventoryService)
 
 	// order module
 	orderRepo := order.NewRepository(db)
