@@ -3,19 +3,19 @@ server:
 
 database:
   driver: postgres
-  host: localhost
-  port: 2077
+  host: postgres
+  port: 5432
   user: flashsale
   password: flashsale123
   dbname: flashsale
   sslmode: disable
   timezone: Asia/Shanghai
   replicas:
-    - host: localhost
-      port: 2078
+    - host: postgres-replica
+      port: 5432
 
 redis:
-  host: localhost
+  host: redis
   port: 6379
   password: ""
   db: 0
@@ -29,5 +29,5 @@ snowflake:
 
 kafka:
   brokers:
-    - localhost:9092
+    - kafka:9092
   topic: seckill-orders

@@ -26,7 +26,7 @@ func main() {
 	}
 
 	// connect to database
-	db, err := database.NewPostgres(cfg.Database.DSN())
+	db, err := database.NewPostgresWithReplicas(cfg.Database.DSN(), cfg.Database.ReplicaDSNs())
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}

@@ -16,6 +16,21 @@ services:
       timeout: 5s
       retries: 5
 
+  postgres-replica:
+    image: postgres:16-alpine
+    container_name: flash-sale-postgres-replica
+    environment:
+      POSTGRES_USER: flashsale
+      POSTGRES_PASSWORD: flashsale123
+      POSTGRES_DB: flashsale
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flashsale"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   redis:
     image: redis:7-alpine
     container_name: flash-sale-redis
@@ -66,17 +81,13 @@ services:
       - "8081:8081"
     environment:
       FLASH_SALE_SERVER_PORT: 8081
-      FLASH_SALE_DATABASE_HOST: postgres
-      FLASH_SALE_DATABASE_PORT: 5432
-      FLASH_SALE_DATABASE_USER: flashsale
-      FLASH_SALE_DATABASE_PASSWORD: flashsale123
-      FLASH_SALE_DATABASE_DBNAME: flashsale
-      FLASH_SALE_DATABASE_SSLMODE: disable
-      FLASH_SALE_REDIS_HOST: redis
-      FLASH_SALE_REDIS_PORT: 6379
-      FLASH_SALE_KAFKA_BROKERS: kafka:9092
+      FLASH_SALE_SNOWFLAKE_NODE_ID: 1
+    volumes:
+      - ./config/config.docker.yaml:/app/config/config.yaml:ro
     depends_on:
       postgres:
+        condition: service_healthy
+      postgres-replica:
         condition: service_healthy
       redis:
         condition: service_healthy
@@ -90,17 +101,13 @@ services:
       - "8082:8082"
     environment:
       FLASH_SALE_SERVER_PORT: 8082
-      FLASH_SALE_DATABASE_HOST: postgres
-      FLASH_SALE_DATABASE_PORT: 5432
-      FLASH_SALE_DATABASE_USER: flashsale
-      FLASH_SALE_DATABASE_PASSWORD: flashsale123
-      FLASH_SALE_DATABASE_DBNAME: flashsale
-      FLASH_SALE_DATABASE_SSLMODE: disable
-      FLASH_SALE_REDIS_HOST: redis
-      FLASH_SALE_REDIS_PORT: 6379
-      FLASH_SALE_KAFKA_BROKERS: kafka:9092
+      FLASH_SALE_SNOWFLAKE_NODE_ID: 2
+    volumes:
+      - ./config/config.docker.yaml:/app/config/config.yaml:ro
     depends_on:
       postgres:
+        condition: service_healthy
+      postgres-replica:
         condition: service_healthy
       redis:
         condition: service_healthy

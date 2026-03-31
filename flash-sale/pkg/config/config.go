@@ -30,14 +30,22 @@ type ServerConfig struct {
 }
 
 type DatabaseConfig struct {
-	Driver   string `mapstructure:"driver"`
+	Driver   string          `mapstructure:"driver"`
+	Host     string          `mapstructure:"host"`
+	Port     int             `mapstructure:"port"`
+	User     string          `mapstructure:"user"`
+	Password string          `mapstructure:"password"`
+	DBName   string          `mapstructure:"dbname"`
+	SSLMode  string          `mapstructure:"sslmode"`
+	Timezone string          `mapstructure:"timezone"`
+	Replicas []ReplicaConfig `mapstructure:"replicas"`
+}
+
+type ReplicaConfig struct {
 	Host     string `mapstructure:"host"`
 	Port     int    `mapstructure:"port"`
 	User     string `mapstructure:"user"`
 	Password string `mapstructure:"password"`
-	DBName   string `mapstructure:"dbname"`
-	SSLMode  string `mapstructure:"sslmode"`
-	Timezone string `mapstructure:"timezone"`
 }
 
 type RedisConfig struct {
@@ -54,6 +62,23 @@ type JWTConfig struct {
 
 func (d *DatabaseConfig) DSN() string {
 	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s", d.User, d.Password, d.Host, d.Port, d.DBName, d.SSLMode)
+}
+
+func (d *DatabaseConfig) ReplicaDSNs() []string {
+	dsns := make([]string, 0, len(d.Replicas))
+	for _, r := range d.Replicas {
+		user := r.User
+		if user == "" {
+			user = d.User
+		}
+		pw := r.Password
+		if pw == "" {
+			pw = d.Password
+		}
+		dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s", user, pw, r.Host, r.Port, d.DBName, d.SSLMode)
+		dsns = append(dsns, dsn)
+	}
+	return dsns
 }
 
 func LoadConfig(path string) (*Config, error) {
