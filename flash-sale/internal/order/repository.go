@@ -72,3 +72,12 @@ func (r *Repository) UpdateStatus(orderID uint, status int16) error {
 func (r *Repository) UpdateStatusTx(tx *gorm.DB, orderID uint, status int16) error {
 	return tx.Model(&Order{}).Where("id = ?", orderID).Update("status", status).Error
 }
+
+func (r *Repository) ExistsByUserAndProduct(userID, productID uint) (bool, error) {
+	var count int64
+	err := r.db.Model(&Order{}).Where("user_id = ? AND product_id = ?", userID, productID).Count(&count).Error
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}

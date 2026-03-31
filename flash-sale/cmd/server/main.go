@@ -62,7 +62,7 @@ func main() {
 
 	// order module
 	orderRepo := order.NewRepository(db)
-	orderService := order.NewService(orderRepo, productService, inventoryService, sfNode)
+	orderService := order.NewService(orderRepo, productService, inventoryService, sfNode, redisClient)
 	orderHandler := order.NewHandler(orderService)
 	// setup router
 	r := gin.New()

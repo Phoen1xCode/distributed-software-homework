@@ -1,12 +1,17 @@
 package order
 
 import (
+	"context"
 	"errors"
+	"fmt"
+	"log"
+	"time"
 
 	"flash-sale/internal/inventory"
 	"flash-sale/internal/product"
 	"flash-sale/pkg/snowflake"
 
+	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
@@ -17,6 +22,7 @@ var (
 	ErrProductNotFound   = errors.New("product not found")
 	ErrProductOffSale    = errors.New("product is not on sale")
 	ErrStockInsufficient = errors.New("stock insufficient")
+	ErrDuplicateOrder    = errors.New("you have already purchased this product")
 )
 
 type OrderService struct {
@@ -24,18 +30,38 @@ type OrderService struct {
 	productService   *product.ProductService
 	inventoryService *inventory.InventoryService
 	snowflakeNode    *snowflake.Node
+	rdb              *redis.Client
 }
 
-func NewService(repo *Repository, productSvc *product.ProductService, inventorySvc *inventory.InventoryService, sfNode *snowflake.Node) *OrderService {
+func NewService(repo *Repository, productSvc *product.ProductService, inventorySvc *inventory.InventoryService, sfNode *snowflake.Node, rdb *redis.Client) *OrderService {
 	return &OrderService{
 		repo:             repo,
 		productService:   productSvc,
 		inventoryService: inventorySvc,
 		snowflakeNode:    sfNode,
+		rdb:              rdb,
 	}
 }
 
 func (s *OrderService) CreateOrder(userID uint, req *CreateOrderRequest) (*Order, error) {
+	// Idempotency check: one user can only buy each product once
+	idempotencyKey := fmt.Sprintf("seckill:lock:%d:%d", userID, req.ProductID)
+	ctx := context.Background()
+
+	set, err := s.rdb.SetNX(ctx, idempotencyKey, "1", 24*time.Hour).Result()
+	if err != nil {
+		log.Printf("[WARN] Redis SETNX failed: %v, falling back to DB", err)
+		exists, dbErr := s.repo.ExistsByUserAndProduct(userID, req.ProductID)
+		if dbErr != nil {
+			return nil, dbErr
+		}
+		if exists {
+			return nil, ErrDuplicateOrder
+		}
+	} else if !set {
+		return nil, ErrDuplicateOrder
+	}
+
 	// 1. Check product exists and is on sale (read-only, outside transaction)
 	p, err := s.productService.GetProductByID(req.ProductID)
 	if err != nil {
@@ -69,6 +95,10 @@ func (s *OrderService) CreateOrder(userID uint, req *CreateOrderRequest) (*Order
 		return nil
 	})
 	if err != nil {
+		// Rollback idempotency key on failure
+		if delErr := s.rdb.Del(ctx, idempotencyKey).Err(); delErr != nil {
+			log.Printf("[WARN] Redis DEL idempotency key failed: %v", delErr)
+		}
 		if errors.Is(err, inventory.ErrInventoryNotFound) || errors.Is(err, inventory.ErrStockInsufficient) {
 			return nil, ErrStockInsufficient
 		}

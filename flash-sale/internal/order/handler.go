@@ -40,6 +40,10 @@ func (h *Handler) CreateOrder(c *gin.Context) {
 			response.Error(c, http.StatusConflict, err.Error())
 			return
 		}
+		if errors.Is(err, ErrDuplicateOrder) {
+			response.Error(c, http.StatusConflict, err.Error())
+			return
+		}
 		if errors.Is(err, ErrStockInsufficient) {
 			response.Error(c, http.StatusConflict, err.Error())
 			return
