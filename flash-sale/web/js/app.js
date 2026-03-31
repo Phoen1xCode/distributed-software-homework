@@ -117,9 +117,48 @@ async function loadProducts() {
                     <div class="price">&yen;${price.toFixed(2)}</div>
                     <div class="stock">${stockText}</div>
                 </div>
-                ${token ? `<button onclick="buyProduct(${id})">Buy Now</button>` : ""}
+                ${token ? `<button onclick="seckillProduct(${id})">Flash Sale</button>` : ""}
             </div>`;
   });
+}
+
+async function seckillProduct(productId) {
+    try {
+        const res = await api('/seckill', {
+            method: 'POST',
+            body: JSON.stringify({ product_id: productId, quantity: 1 })
+        });
+        if (res.code === 200) {
+            showMessage('Order submitted! Order No: ' + res.data.order_no, 'success');
+            pollSeckillResult(res.data.order_no);
+            loadProducts();
+        } else {
+            showMessage(res.message, 'error');
+        }
+    } catch (e) {
+        showMessage('Seckill failed', 'error');
+    }
+}
+
+async function pollSeckillResult(orderNo) {
+    let attempts = 0;
+    const maxAttempts = 10;
+    const interval = setInterval(async () => {
+        attempts++;
+        try {
+            const res = await api('/seckill/result?order_no=' + orderNo);
+            if (res.code === 200 && res.data.status !== 'PENDING') {
+                clearInterval(interval);
+                if (res.data.status === 'SUCCESS') {
+                    showMessage('Order ' + orderNo + ' confirmed!', 'success');
+                } else {
+                    showMessage('Order ' + orderNo + ' failed', 'error');
+                }
+                loadOrders();
+            }
+        } catch (e) { /* ignore polling errors */ }
+        if (attempts >= maxAttempts) clearInterval(interval);
+    }, 1000);
 }
 
 async function buyProduct(productId) {
