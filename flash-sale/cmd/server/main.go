@@ -9,6 +9,7 @@ import (
 	"flash-sale/pkg/cache"
 	"flash-sale/pkg/config"
 	"flash-sale/pkg/database"
+	"flash-sale/pkg/snowflake"
 	"fmt"
 	"log"
 	"time"
@@ -53,9 +54,15 @@ func main() {
 	cachedProductService := product.NewCachedService(productService, redisClient)
 	productHandler := product.NewHandler(cachedProductService, inventoryService)
 
+	// snowflake node
+	sfNode, err := snowflake.NewNode(cfg.Snowflake.NodeID)
+	if err != nil {
+		log.Fatalf("Failed to create snowflake node: %v", err)
+	}
+
 	// order module
 	orderRepo := order.NewRepository(db)
-	orderService := order.NewService(orderRepo, productService, inventoryService)
+	orderService := order.NewService(orderRepo, productService, inventoryService, sfNode)
 	orderHandler := order.NewHandler(orderService)
 	// setup router
 	r := gin.New()

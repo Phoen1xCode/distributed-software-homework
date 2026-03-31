@@ -20,3 +20,6 @@ redis:
 jwt:
   secret: flash-sale-jwt-secret-key-change-in-production
   expire_hours: 24
+
+snowflake:
+  node_id: 1

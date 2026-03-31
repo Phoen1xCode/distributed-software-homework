@@ -8,10 +8,15 @@ import (
 )
 
 type Config struct {
-	Server   ServerConfig
-	Database DatabaseConfig
-	JWT      JWTConfig
-	Redis    RedisConfig
+	Server    ServerConfig
+	Database  DatabaseConfig
+	JWT       JWTConfig
+	Redis     RedisConfig
+	Snowflake SnowflakeConfig
+}
+
+type SnowflakeConfig struct {
+	NodeID int64 `mapstructure:"node_id"`
 }
 
 type ServerConfig struct {

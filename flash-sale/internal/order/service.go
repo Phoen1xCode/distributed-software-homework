@@ -1,13 +1,11 @@
 package order
 
 import (
-	"crypto/rand"
 	"errors"
-	"fmt"
-	"time"
 
 	"flash-sale/internal/inventory"
 	"flash-sale/internal/product"
+	"flash-sale/pkg/snowflake"
 
 	"gorm.io/gorm"
 )
@@ -25,13 +23,15 @@ type OrderService struct {
 	repo             *Repository
 	productService   *product.ProductService
 	inventoryService *inventory.InventoryService
+	snowflakeNode    *snowflake.Node
 }
 
-func NewService(repo *Repository, productSvc *product.ProductService, inventorySvc *inventory.InventoryService) *OrderService {
+func NewService(repo *Repository, productSvc *product.ProductService, inventorySvc *inventory.InventoryService, sfNode *snowflake.Node) *OrderService {
 	return &OrderService{
 		repo:             repo,
 		productService:   productSvc,
 		inventoryService: inventorySvc,
+		snowflakeNode:    sfNode,
 	}
 }
 
@@ -50,7 +50,7 @@ func (s *OrderService) CreateOrder(userID uint, req *CreateOrderRequest) (*Order
 
 	// 2. Deduct inventory and create order atomically in one transaction
 	o := &Order{
-		OrderNo:    generateOrderNo(),
+		OrderNo:    s.snowflakeNode.GenerateString(),
 		UserID:     userID,
 		ProductID:  req.ProductID,
 		Quantity:   req.Quantity,
@@ -141,8 +141,3 @@ func (s *OrderService) CancelOrder(userID, orderID uint) (*Order, error) {
 	return o, nil
 }
 
-func generateOrderNo() string {
-	b := make([]byte, 8)
-	rand.Read(b)
-	return fmt.Sprintf("%s%x", time.Now().Format("20060102150405"), b)
-}
