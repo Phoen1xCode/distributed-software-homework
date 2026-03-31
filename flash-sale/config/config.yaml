@@ -23,3 +23,8 @@ jwt:
 
 snowflake:
   node_id: 1
+
+kafka:
+  brokers:
+    - localhost:9092
+  topic: seckill-orders

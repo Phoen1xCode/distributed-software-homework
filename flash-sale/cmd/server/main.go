@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flash-sale/internal/inventory"
 	"flash-sale/internal/middleware"
 	"flash-sale/internal/order"
@@ -9,6 +10,7 @@ import (
 	"flash-sale/pkg/cache"
 	"flash-sale/pkg/config"
 	"flash-sale/pkg/database"
+	"flash-sale/pkg/kafka"
 	"flash-sale/pkg/snowflake"
 	"fmt"
 	"log"
@@ -64,6 +66,13 @@ func main() {
 	orderRepo := order.NewRepository(db)
 	orderService := order.NewService(orderRepo, productService, inventoryService, sfNode, redisClient)
 	orderHandler := order.NewHandler(orderService)
+
+	// kafka producer
+	kafkaProducer, err := kafka.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
+	if err != nil {
+		log.Printf("[WARN] Failed to create Kafka producer: %v (seckill disabled)", err)
+	}
+
 	// setup router
 	r := gin.New()
 
@@ -96,6 +105,27 @@ func main() {
 	productHandler.RegisterRoutes(publicGroup, adminGroup)
 	inventoryHandler.RegisterRoutes(publicGroup, authGroup, adminGroup)
 	orderHandler.RegisterRoutes(authGroup)
+
+	// seckill module (only if Kafka is available)
+	if kafkaProducer != nil {
+		seckillService := order.NewSeckillService(orderRepo, productService, inventoryService, sfNode, redisClient, kafkaProducer)
+		seckillHandler := order.NewSeckillHandler(seckillService)
+		seckillHandler.RegisterRoutes(authGroup)
+
+		// start seckill consumer
+		seckillConsumer := order.NewSeckillConsumer(orderRepo, inventoryService, redisClient)
+		kafkaConsumer, err := kafka.NewConsumer(cfg.Kafka.Brokers, "seckill-group", cfg.Kafka.Topic, seckillConsumer.HandleMessage)
+		if err != nil {
+			log.Printf("[WARN] Failed to create Kafka consumer: %v", err)
+		} else {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			go kafkaConsumer.Start(ctx)
+			defer kafkaConsumer.Close()
+		}
+
+		defer kafkaProducer.Close()
+	}
 
 	// health check
 	r.GET("/health", func(c *gin.Context) {

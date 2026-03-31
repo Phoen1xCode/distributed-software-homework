@@ -13,10 +13,16 @@ type Config struct {
 	JWT       JWTConfig
 	Redis     RedisConfig
 	Snowflake SnowflakeConfig
+	Kafka     KafkaConfig
 }
 
 type SnowflakeConfig struct {
 	NodeID int64 `mapstructure:"node_id"`
+}
+
+type KafkaConfig struct {
+	Brokers []string `mapstructure:"brokers"`
+	Topic   string   `mapstructure:"topic"`
 }
 
 type ServerConfig struct {
