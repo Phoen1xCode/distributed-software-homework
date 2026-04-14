@@ -14,6 +14,8 @@ type Config struct {
 	Redis     RedisConfig
 	Snowflake SnowflakeConfig
 	Kafka     KafkaConfig
+	Outbox    OutboxConfig
+	Payment   PaymentConfig
 }
 
 type SnowflakeConfig struct {
@@ -21,8 +23,23 @@ type SnowflakeConfig struct {
 }
 
 type KafkaConfig struct {
-	Brokers []string `mapstructure:"brokers"`
-	Topic   string   `mapstructure:"topic"`
+	Brokers        []string              `mapstructure:"brokers"`
+	Topic          string                `mapstructure:"topic"`
+	ProduceTopic   string                `mapstructure:"produce_topic"`
+	ConsumerGroups []ConsumerGroupConfig `mapstructure:"consumer_groups"`
+}
+
+type ConsumerGroupConfig struct {
+	GroupID string `mapstructure:"group_id"`
+	Topic   string `mapstructure:"topic"`
+}
+
+type OutboxConfig struct {
+	IntervalMs int `mapstructure:"interval_ms"`
+}
+
+type PaymentConfig struct {
+	SuccessRate float64 `mapstructure:"success_rate"`
 }
 
 type ServerConfig struct {

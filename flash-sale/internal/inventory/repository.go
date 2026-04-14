@@ -64,3 +64,21 @@ func (r *Repository) ReturnStock(productID uint, quantity int) error {
 	}
 	return nil
 }
+
+// ConfirmDeduction moves stock from "locked" to "sold" (decrements locked).
+// Called when an order is fully completed (paid).
+func (r *Repository) ConfirmDeduction(productID uint, quantity int) error {
+	result := r.db.Model(&Inventory{}).
+		Where("product_id = ? AND locked >= ?", productID, quantity).
+		Updates(map[string]interface{}{
+			"locked":  gorm.Expr("locked - ?", quantity),
+			"version": gorm.Expr("version + 1"),
+		})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return errors.New("insufficient locked stock to confirm")
+	}
+	return nil
+}

@@ -1,0 +1,41 @@
+server:
+  port: 8081
+
+database:
+  driver: postgres
+  host: order-db
+  port: 5432
+  user: flashsale
+  password: flashsale123
+  dbname: order_db
+  sslmode: disable
+  timezone: Asia/Shanghai
+  replicas:
+    - host: order-db-replica
+      port: 5432
+
+redis:
+  host: redis
+  port: 6379
+  password: ""
+  db: 0
+
+jwt:
+  secret: flash-sale-jwt-secret-key-change-in-production
+  expire_hours: 24
+
+snowflake:
+  node_id: 1
+
+kafka:
+  brokers:
+    - kafka:9092
+  produce_topic: order-events
+  consumer_groups:
+    - group_id: order-service-group
+      topic: inventory-events
+    - group_id: order-payment-group
+      topic: payment-events
+
+outbox:
+  interval_ms: 500

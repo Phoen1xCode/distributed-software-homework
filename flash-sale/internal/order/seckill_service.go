@@ -2,7 +2,6 @@ package order
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -10,45 +9,39 @@ import (
 
 	"flash-sale/internal/inventory"
 	"flash-sale/internal/product"
-	"flash-sale/pkg/kafka"
+	"flash-sale/pkg/event"
+	"flash-sale/pkg/outbox"
 	"flash-sale/pkg/snowflake"
 
+	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"gorm.io/gorm"
 )
 
-type SeckillMessage struct {
-	OrderNo   string  `json:"order_no"`
-	UserID    uint    `json:"user_id"`
-	ProductID uint    `json:"product_id"`
-	Quantity  int     `json:"quantity"`
-	Price     float64 `json:"price"`
-}
-
 type SeckillService struct {
 	repo             *Repository
+	db               *gorm.DB
 	productService   *product.ProductService
 	inventoryService *inventory.InventoryService
 	snowflakeNode    *snowflake.Node
 	rdb              *redis.Client
-	producer         *kafka.Producer
 }
 
 func NewSeckillService(
 	repo *Repository,
+	db *gorm.DB,
 	productSvc *product.ProductService,
 	inventorySvc *inventory.InventoryService,
 	sfNode *snowflake.Node,
 	rdb *redis.Client,
-	producer *kafka.Producer,
 ) *SeckillService {
 	return &SeckillService{
 		repo:             repo,
+		db:               db,
 		productService:   productSvc,
 		inventoryService: inventorySvc,
 		snowflakeNode:    sfNode,
 		rdb:              rdb,
-		producer:         producer,
 	}
 }
 
@@ -91,25 +84,46 @@ func (s *SeckillService) Seckill(userID uint, req *CreateOrderRequest) (string, 
 		return "", ErrStockInsufficient
 	}
 
-	// 4. Generate order number and send to Kafka
+	// 4. Create order + outbox event in same transaction
 	orderNo := s.snowflakeNode.GenerateString()
-	msg := SeckillMessage{
-		OrderNo:   orderNo,
-		UserID:    userID,
-		ProductID: req.ProductID,
-		Quantity:  req.Quantity,
-		Price:     p.Price * float64(req.Quantity),
-	}
-	data, _ := json.Marshal(msg)
+	totalPrice := p.Price * float64(req.Quantity)
 
-	if err := s.producer.SendMessage([]byte(orderNo), data); err != nil {
+	o := &Order{
+		OrderNo:    orderNo,
+		UserID:     userID,
+		ProductID:  req.ProductID,
+		Quantity:   req.Quantity,
+		TotalPrice: totalPrice,
+		Status:     StatusPending,
+	}
+
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Create(o).Error; err != nil {
+			return err
+		}
+		return outbox.WriteEvent(tx, "order", orderNo, event.OrderCreated, event.TopicOrderEvents,
+			event.OrderCreatedEvent{
+				BaseEvent: event.BaseEvent{
+					EventID:   uuid.New().String(),
+					EventType: event.OrderCreated,
+					Timestamp: time.Now(),
+				},
+				OrderNo:    orderNo,
+				UserID:     userID,
+				ProductID:  req.ProductID,
+				Quantity:   req.Quantity,
+				TotalPrice: totalPrice,
+			})
+	})
+	if err != nil {
+		// Rollback Redis on DB failure
 		inventory.RollbackRedis(s.rdb, req.ProductID, req.Quantity)
 		s.rdb.Del(ctx, idempotencyKey)
-		log.Printf("[ERROR] Kafka send failed: %v", err)
-		return "", fmt.Errorf("failed to enqueue order: %w", err)
+		log.Printf("[ERROR] Seckill DB transaction failed: %v", err)
+		return "", fmt.Errorf("failed to create order: %w", err)
 	}
 
-	// 5. Store pending status in Redis
+	// 5. Store pending status in Redis for polling
 	s.rdb.Set(ctx, fmt.Sprintf("seckill:result:%s", orderNo), "PENDING", 30*time.Minute)
 
 	return orderNo, nil
@@ -130,5 +144,13 @@ func (s *SeckillService) GetSeckillResult(orderNo string) (string, error) {
 		}
 		return "", err
 	}
-	return "SUCCESS", nil
+
+	switch o.Status {
+	case StatusPaid:
+		return "SUCCESS", nil
+	case StatusCancelled:
+		return "FAILED", nil
+	default:
+		return "PENDING", nil
+	}
 }

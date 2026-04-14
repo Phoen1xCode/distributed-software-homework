@@ -103,6 +103,11 @@ func (s *InventoryService) Return(productID uint, quantity int) error {
 	return s.repo.ReturnStock(productID, quantity)
 }
 
+// ConfirmDeduction marks locked stock as sold after successful payment.
+func (s *InventoryService) ConfirmDeduction(productID uint, quantity int) error {
+	return s.repo.ConfirmDeduction(productID, quantity)
+}
+
 const stockKeyPrefix = "inventory:stock:"
 
 func stockKey(productID uint) string {

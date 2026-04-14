@@ -1,36 +1,72 @@
 services:
-  postgres:
+  # === Databases ===
+  order-db:
     image: postgres:16-alpine
-    container_name: flash-sale-postgres
+    container_name: flash-sale-order-db
     environment:
       POSTGRES_USER: flashsale
       POSTGRES_PASSWORD: flashsale123
-      POSTGRES_DB: flashsale
+      POSTGRES_DB: order_db
     ports:
-      - "5432:5432"
+      - "5441:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - order-pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U flashsale"]
+      test: ["CMD-SHELL", "pg_isready -U flashsale -d order_db"]
       interval: 5s
       timeout: 5s
       retries: 5
 
-  postgres-replica:
+  order-db-replica:
     image: postgres:16-alpine
-    container_name: flash-sale-postgres-replica
+    container_name: flash-sale-order-db-replica
     environment:
       POSTGRES_USER: flashsale
       POSTGRES_PASSWORD: flashsale123
-      POSTGRES_DB: flashsale
+      POSTGRES_DB: order_db
     ports:
-      - "5433:5432"
+      - "5444:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U flashsale"]
+      test: ["CMD-SHELL", "pg_isready -U flashsale -d order_db"]
       interval: 5s
       timeout: 5s
       retries: 5
 
+  inventory-db:
+    image: postgres:16-alpine
+    container_name: flash-sale-inventory-db
+    environment:
+      POSTGRES_USER: flashsale
+      POSTGRES_PASSWORD: flashsale123
+      POSTGRES_DB: inventory_db
+    ports:
+      - "5442:5432"
+    volumes:
+      - inventory-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flashsale -d inventory_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  payment-db:
+    image: postgres:16-alpine
+    container_name: flash-sale-payment-db
+    environment:
+      POSTGRES_USER: flashsale
+      POSTGRES_PASSWORD: flashsale123
+      POSTGRES_DB: payment_db
+    ports:
+      - "5443:5432"
+    volumes:
+      - payment-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U flashsale -d payment_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # === Infrastructure ===
   redis:
     image: redis:7-alpine
     container_name: flash-sale-redis
@@ -74,57 +110,83 @@ services:
       timeout: 10s
       retries: 10
 
-  app-1:
-    build: .
-    container_name: flash-sale-app-1
+  # === Microservices ===
+  order-service:
+    build:
+      context: .
+      args:
+        SERVICE: order-service
+    container_name: flash-sale-order-service
     ports:
       - "8081:8081"
     environment:
       FLASH_SALE_SERVER_PORT: 8081
       FLASH_SALE_SNOWFLAKE_NODE_ID: 1
     volumes:
-      - ./config/config.docker.yaml:/app/config/config.yaml:ro
+      - ./config/order-service.yaml:/app/config/config.yaml:ro
     depends_on:
-      postgres:
+      order-db:
         condition: service_healthy
-      postgres-replica:
+      order-db-replica:
         condition: service_healthy
       redis:
         condition: service_healthy
       kafka:
         condition: service_healthy
 
-  app-2:
-    build: .
-    container_name: flash-sale-app-2
+  inventory-service:
+    build:
+      context: .
+      args:
+        SERVICE: inventory-service
+    container_name: flash-sale-inventory-service
     ports:
       - "8082:8082"
     environment:
       FLASH_SALE_SERVER_PORT: 8082
-      FLASH_SALE_SNOWFLAKE_NODE_ID: 2
     volumes:
-      - ./config/config.docker.yaml:/app/config/config.yaml:ro
+      - ./config/inventory-service.yaml:/app/config/config.yaml:ro
     depends_on:
-      postgres:
-        condition: service_healthy
-      postgres-replica:
+      inventory-db:
         condition: service_healthy
       redis:
         condition: service_healthy
       kafka:
         condition: service_healthy
 
+  payment-service:
+    build:
+      context: .
+      args:
+        SERVICE: payment-service
+    container_name: flash-sale-payment-service
+    ports:
+      - "8083:8083"
+    environment:
+      FLASH_SALE_SERVER_PORT: 8083
+      FLASH_SALE_PAYMENT_SUCCESS_RATE: "1.0"
+    volumes:
+      - ./config/payment-service.yaml:/app/config/config.yaml:ro
+    depends_on:
+      payment-db:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+
+  # === Gateway ===
   nginx:
     image: nginx:latest
     container_name: flash-sale-nginx
     ports:
       - "80:80"
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/nginx-microservice.conf:/etc/nginx/nginx.conf:ro
       - ./web:/usr/share/nginx/html:ro
     depends_on:
-      - app-1
-      - app-2
+      - order-service
+      - inventory-service
 
 volumes:
-  pgdata:
+  order-pgdata:
+  inventory-pgdata:
+  payment-pgdata:

@@ -138,7 +138,7 @@ func (s *OrderService) CancelOrder(userID, orderID uint) (*Order, error) {
 		if o.UserID != userID {
 			return ErrNotOrderOwner
 		}
-		if o.Status != 0 {
+		if o.Status != StatusPending {
 			return ErrOrderNotPending
 		}
 
@@ -149,7 +149,7 @@ func (s *OrderService) CancelOrder(userID, orderID uint) (*Order, error) {
 		}
 
 		// Update order status to cancelled
-		if err := s.repo.UpdateStatusTx(tx, orderID, 2); err != nil {
+		if err := s.repo.UpdateStatusTx(tx, orderID, StatusCancelled); err != nil {
 			return err
 		}
 		return nil
@@ -167,7 +167,7 @@ func (s *OrderService) CancelOrder(userID, orderID uint) (*Order, error) {
 		return nil, err
 	}
 
-	o.Status = 2
+	o.Status = StatusCancelled
 	return o, nil
 }
 

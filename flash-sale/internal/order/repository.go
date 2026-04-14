@@ -81,3 +81,33 @@ func (r *Repository) ExistsByUserAndProduct(userID, productID uint) (bool, error
 	}
 	return count > 0, nil
 }
+
+func (r *Repository) GetOrderByOrderNo(orderNo string) (*Order, error) {
+	var o Order
+	if err := r.db.Where("order_no = ?", orderNo).First(&o).Error; err != nil {
+		return nil, err
+	}
+	return &o, nil
+}
+
+func (r *Repository) UpdateStatusByOrderNo(orderNo string, status int16) error {
+	result := r.db.Model(&Order{}).Where("order_no = ?", orderNo).Update("status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}
+
+func (r *Repository) UpdateStatusByOrderNoTx(tx *gorm.DB, orderNo string, status int16) error {
+	result := tx.Model(&Order{}).Where("order_no = ?", orderNo).Update("status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
+}

@@ -26,58 +26,91 @@ func main() {
 		log.Fatalf("Failed to load config: %v", err)
 	}
 
-	// connect to database
 	db, err := database.NewPostgresWithReplicas(cfg.Database.DSN(), cfg.Database.ReplicaDSNs())
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 
-	// connect to redis
 	redisClient := cache.NewRedisClient(cfg.Redis)
 	defer redisClient.Close()
 
-	// auto migrate
-	if err := db.AutoMigrate(&user.User{}, &product.Product{}, &inventory.Inventory{}, &order.Order{}, &outbox.OutboxEvent{}); err != nil {
+	// Auto migrate order-service tables
+	if err := db.AutoMigrate(&user.User{}, &product.Product{}, &order.Order{}, &outbox.OutboxEvent{}); err != nil {
 		log.Fatalf("Failed to auto migrate: %v", err)
 	}
 
-	// user module
+	// User module
 	userRepo := user.NewRepository(db)
 	userService := user.NewService(userRepo, cfg.JWT.Secret, cfg.JWT.ExpireHours)
 	userHandler := user.NewHandler(userService)
 
-	// inventory module
-	inventoryRepo := inventory.NewRepository(db)
-	inventoryService := inventory.NewService(inventoryRepo)
-	inventoryHandler := inventory.NewHandler(inventoryService)
-
-	// product module
+	// Product module (read context for orders)
 	productRepo := product.NewRepository(db)
 	productService := product.NewService(productRepo)
 	cachedProductService := product.NewCachedService(productService, redisClient)
+	// Inventory service stub for product handler (read-only, not the real inventory DB)
+	inventoryRepo := inventory.NewRepository(db)
+	inventoryService := inventory.NewService(inventoryRepo)
 	productHandler := product.NewHandler(cachedProductService, inventoryService)
 
-	// snowflake node
+	// Snowflake
 	sfNode, err := snowflake.NewNode(cfg.Snowflake.NodeID)
 	if err != nil {
 		log.Fatalf("Failed to create snowflake node: %v", err)
 	}
 
-	// order module
+	// Order module
 	orderRepo := order.NewRepository(db)
 	orderService := order.NewService(orderRepo, productService, inventoryService, sfNode, redisClient)
 	orderHandler := order.NewHandler(orderService)
 
-	// seckill module (uses outbox pattern now)
+	// Seckill module
 	seckillService := order.NewSeckillService(orderRepo, db, productService, inventoryService, sfNode, redisClient)
 	seckillHandler := order.NewSeckillHandler(seckillService)
 
-	// setup router
-	r := gin.New()
+	// Kafka producer for outbox relay
+	kafkaProducer, err := kafka.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.ProduceTopic)
+	if err != nil {
+		log.Fatalf("Failed to create Kafka producer: %v", err)
+	}
+	defer kafkaProducer.Close()
 
-	// custom logger with instance port
+	// Outbox relay
+	interval := 500 * time.Millisecond
+	if cfg.Outbox.IntervalMs > 0 {
+		interval = time.Duration(cfg.Outbox.IntervalMs) * time.Millisecond
+	}
+	relay := outbox.NewRelay(db, kafkaProducer, interval)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go relay.Start(ctx)
+
+	// Order event handler (consumes inventory-events and payment-events)
+	orderEventHandler := order.NewEventHandler(orderRepo, db, redisClient)
+	for _, cg := range cfg.Kafka.ConsumerGroups {
+		var handler kafka.MessageHandler
+		switch cg.Topic {
+		case "inventory-events":
+			handler = orderEventHandler.HandleInventoryEvent
+		case "payment-events":
+			handler = orderEventHandler.HandlePaymentEvent
+		default:
+			log.Printf("[WARN] Unknown consumer topic: %s", cg.Topic)
+			continue
+		}
+		consumer, err := kafka.NewConsumer(cfg.Kafka.Brokers, cg.GroupID, cg.Topic, handler)
+		if err != nil {
+			log.Printf("[WARN] Failed to create consumer for %s: %v", cg.Topic, err)
+			continue
+		}
+		go consumer.Start(ctx)
+		defer consumer.Close()
+	}
+
+	// Router
+	r := gin.New()
 	r.Use(gin.LoggerWithFormatter(func(param gin.LogFormatterParams) string {
-		return fmt.Sprintf("[%s] [INFO] [instance:%d] %s %s %d %s\n",
+		return fmt.Sprintf("[%s] [INFO] [order-service:%d] %s %s %d %s\n",
 			param.TimeStamp.Format(time.RFC3339),
 			cfg.Server.Port,
 			param.Method,
@@ -89,62 +122,24 @@ func main() {
 	r.Use(gin.Recovery())
 
 	api := r.Group("/api/v1")
-	// public routes
 	publicGroup := api.Group("")
-	// auth routes
 	authGroup := api.Group("")
 	authGroup.Use(middleware.JWTAuth(cfg.JWT.Secret))
-	// admin routes
 	adminGroup := api.Group("")
 	adminGroup.Use(middleware.JWTAuth(cfg.JWT.Secret))
 	adminGroup.Use(middleware.AdminRequired())
 
-	// register routes
 	userHandler.RegisterRoutes(publicGroup, authGroup)
 	productHandler.RegisterRoutes(publicGroup, adminGroup)
-	inventoryHandler.RegisterRoutes(publicGroup, authGroup, adminGroup)
 	orderHandler.RegisterRoutes(authGroup)
 	seckillHandler.RegisterRoutes(authGroup)
 
-	// Kafka producer for outbox relay
-	kafkaProducer, err := kafka.NewProducer(cfg.Kafka.Brokers, cfg.Kafka.Topic)
-	if err != nil {
-		log.Printf("[WARN] Failed to create Kafka producer: %v (outbox relay disabled)", err)
-	} else {
-		relay := outbox.NewRelay(db, kafkaProducer, 500*time.Millisecond)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		go relay.Start(ctx)
-		defer kafkaProducer.Close()
-
-		// Start event consumers
-		orderEventHandler := order.NewEventHandler(orderRepo, db, redisClient)
-
-		invConsumer, err := kafka.NewConsumer(cfg.Kafka.Brokers, "order-inv-group", "inventory-events", orderEventHandler.HandleInventoryEvent)
-		if err != nil {
-			log.Printf("[WARN] Failed to create inventory consumer: %v", err)
-		} else {
-			go invConsumer.Start(ctx)
-			defer invConsumer.Close()
-		}
-
-		payConsumer, err := kafka.NewConsumer(cfg.Kafka.Brokers, "order-pay-group", "payment-events", orderEventHandler.HandlePaymentEvent)
-		if err != nil {
-			log.Printf("[WARN] Failed to create payment consumer: %v", err)
-		} else {
-			go payConsumer.Start(ctx)
-			defer payConsumer.Close()
-		}
-	}
-
-	// health check
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok"})
+		c.JSON(200, gin.H{"status": "ok", "service": "order-service"})
 	})
 
-	// start server
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
-	log.Printf("Starting server on %s", addr)
+	log.Printf("Order service starting on %s", addr)
 	if err := r.Run(addr); err != nil {
 		log.Fatalf("Failed to start server: %v", err)
 	}

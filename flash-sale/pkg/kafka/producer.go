@@ -40,3 +40,14 @@ func (p *Producer) SendMessage(key, value []byte) error {
 func (p *Producer) Close() error {
 	return p.producer.Close()
 }
+
+// SendMessageToTopic publishes a message to a specific Kafka topic (used by outbox relay).
+func (p *Producer) SendMessageToTopic(topic string, key, value []byte) error {
+	msg := &sarama.ProducerMessage{
+		Topic: topic,
+		Key:   sarama.ByteEncoder(key),
+		Value: sarama.ByteEncoder(value),
+	}
+	_, _, err := p.producer.SendMessage(msg)
+	return err
+}
