@@ -95,8 +95,40 @@ cmd/payment-service/main.go     # Simulated payment (port 8083)
 - `payment-events`: produced by payment service
 
 ### Docker Compose
-- `docker compose up --build -d` starts 3 DBs + 3 services + Redis + Kafka + Nginx
-- Config per service: `config/order-service.yaml`, `config/inventory-service.yaml`, `config/payment-service.yaml`
+- `docker compose up --build -d` starts 3 DBs + 3 services + Gateway + Nacos + Redis + Kafka + Nginx
+- Config per service: `config/order-service.yaml`, `config/inventory-service.yaml`, `config/payment-service.yaml`, `config/gateway.yaml`
+
+## HW6: Service Discovery + Flow Governance
+
+```
+cmd/gateway/main.go      # API gateway: Nacos discovery + sentinel rules + reverse proxy (port 8000)
+pkg/registry/            # nacos-sdk-go/v2 wrapper (register/discover/listen-config)
+config/gateway.yaml      # Routes + sentinel rule thresholds
+```
+
+### Service registration
+
+- All three services call `registry.BootstrapService(cfg)` at startup, which is a no-op when `nacos.enabled=false`
+- Auto-detects local non-loopback IPv4 if `nacos.instance_ip` is empty so docker-network siblings can reach the instance
+- Deregister runs via `defer` on graceful shutdown
+
+### Dynamic configuration
+
+- `payment-service` listens on Nacos Data ID `payment.success_rate` and atomically updates `Service.successRateBits` (a `math.Float64bits` packed into `atomic.Uint64`)
+- Demo: change the value in Nacos console → next payment event uses the new rate without restart
+
+### Gateway
+
+- Sorts routes by descending prefix length (longest-prefix wins) — `seckill` must beat `orders` because `/api/v1/orders` is a prefix of nothing seckill-shaped, but the principle applies to other route pairs
+- Each backend service has an `instancePool` updated by both Nacos `Subscribe` callback (push) and a 5s polling `pollLoop` (pull, safety net)
+- Random load balancing across healthy instances; blocks degrade to `503 + JSON envelope`
+- `proxy.ModifyResponse` traces upstream 5xx as sentinel errors so the breaker can open on downstream failures, not just transport errors
+
+### Sentinel rules
+
+- `route:seckill`: 50 QPS flow rule (Reject) + ErrorRatio breaker (50% errors over 10s with min 10 reqs → open 5s)
+- Other routes: default QPS rule from `gateway.default_qps`
+- Rule values come from `config/gateway.yaml::gateway.sentinel`
 
 ## Code Style
 

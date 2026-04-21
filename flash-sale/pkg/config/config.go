@@ -16,6 +16,40 @@ type Config struct {
 	Kafka     KafkaConfig
 	Outbox    OutboxConfig
 	Payment   PaymentConfig
+	Nacos     NacosConfig
+	Gateway   GatewayConfig
+}
+
+type NacosConfig struct {
+	Enabled     bool   `mapstructure:"enabled"`
+	Host        string `mapstructure:"host"`
+	Port        uint64 `mapstructure:"port"`
+	Namespace   string `mapstructure:"namespace"`
+	Group       string `mapstructure:"group"`
+	ServiceName string `mapstructure:"service_name"`
+	InstanceIP  string `mapstructure:"instance_ip"`
+	DataID      string `mapstructure:"data_id"`
+}
+
+type GatewayConfig struct {
+	Routes        []RouteConfig       `mapstructure:"routes"`
+	Sentinel      SentinelConfig      `mapstructure:"sentinel"`
+	RefreshSecMs  int                 `mapstructure:"refresh_ms"`
+}
+
+type RouteConfig struct {
+	PathPrefix  string `mapstructure:"path_prefix"`
+	ServiceName string `mapstructure:"service_name"`
+	Resource    string `mapstructure:"resource"`
+}
+
+type SentinelConfig struct {
+	SeckillQPS              float64 `mapstructure:"seckill_qps"`
+	SeckillBreakerErrorRate float64 `mapstructure:"seckill_breaker_error_rate"`
+	BreakerMinRequests      uint64  `mapstructure:"breaker_min_requests"`
+	BreakerStatIntervalMs   uint32  `mapstructure:"breaker_stat_interval_ms"`
+	BreakerRetryTimeoutMs   uint32  `mapstructure:"breaker_retry_timeout_ms"`
+	DefaultQPS              float64 `mapstructure:"default_qps"`
 }
 
 type SnowflakeConfig struct {

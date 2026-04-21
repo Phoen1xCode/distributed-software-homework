@@ -27,3 +27,11 @@ kafka:
 
 outbox:
   interval_ms: 500
+
+nacos:
+  enabled: true
+  host: nacos
+  port: 8848
+  group: DEFAULT_GROUP
+  service_name: inventory-service
+  data_id: inventory-service.yaml

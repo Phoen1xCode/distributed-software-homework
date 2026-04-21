@@ -7,8 +7,11 @@ import (
 	"flash-sale/pkg/database"
 	"flash-sale/pkg/kafka"
 	"flash-sale/pkg/outbox"
+	"flash-sale/pkg/registry"
 	"fmt"
 	"log"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -69,6 +72,30 @@ func main() {
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "service": "payment-service"})
 	})
+
+	nacosClient, deregister := registry.BootstrapService(cfg)
+	defer deregister()
+
+	// Dynamic config: subscribe payment.success_rate from Nacos.
+	// The DataID defaults to the service name when not explicitly set so the
+	// Nacos console operator can target this service unambiguously.
+	if nacosClient != nil {
+		dataID := cfg.Nacos.DataID
+		if dataID == "" {
+			dataID = "payment-service.yaml"
+		}
+		if err := nacosClient.ListenConfig(dataID, func(content string) {
+			rate, perr := strconv.ParseFloat(strings.TrimSpace(content), 64)
+			if perr != nil {
+				log.Printf("[payment] dynamic config %s: invalid float %q: %v", dataID, content, perr)
+				return
+			}
+			paymentService.SetSuccessRate(rate)
+			log.Printf("[payment] dynamic config %s -> success_rate=%.3f", dataID, rate)
+		}); err != nil {
+			log.Printf("[payment] listen config %s failed: %v", dataID, err)
+		}
+	}
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("Payment service starting on %s", addr)

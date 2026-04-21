@@ -8,6 +8,16 @@
 /api/v1
 ```
 
+### 入口拓扑（HW6）
+
+```text
+Browser  ──▶  Nginx :80  ──▶  Gateway :8000  ──▶  microservice (8081/8082/8083)
+            (静态 + /api/*)   (Nacos 发现 +
+                               sentinel 限流/熔断/降级)
+```
+
+直接访问 `gateway:8000` 与经过 Nginx 走 `:80/api/*` 在协议层等价；JMeter HW6 场景使用前者绕开静态层做更高 QPS 压测。
+
 ### 认证分级
 
 | 级别        | 说明     | Header                                    |
@@ -336,16 +346,118 @@
 
 ---
 
-## 6. 健康检查
+## 6. 秒杀接口（HW4，由 order-service 提供）
 
-### 6.1 健康状态
+### 6.1 秒杀下单
 
-- **GET** `/health`
+- **POST** `/api/v1/seckill`
+- **认证：** JWT
+- **归属服务：** `order-service:8081`（经 gateway 路由 `route:seckill`，受 sentinel 限流/熔断保护）
+- **请求体：**
+
+```json
+{
+  "product_id": 1,
+  "quantity": 1
+}
+```
+
+- **成功响应（202）：** 立刻返回排队中状态，订单创建为异步过程
+
+```json
+{
+  "code": 202,
+  "message": "秒杀请求已受理",
+  "data": {
+    "order_no": "1735286847123456789"
+  }
+}
+```
+
+- **处理流程：**
+  1. Redis SETNX 幂等键 `seckill:user:{uid}:product:{pid}` (TTL 24h)
+  2. Redis DECRBY 预扣库存 `seckill:stock:{pid}`
+  3. Snowflake 生成 `order_no`
+  4. 写 `orders` (status=0) + `outbox_events` (ORDER_CREATED) 同事务
+  5. Outbox relay 异步投递到 Kafka，触发后续 Saga
+- **错误场景：** 重复下单（409）、库存售罄（409）、限流（503，由网关返回）
+
+### 6.2 查询秒杀结果
+
+- **GET** `/api/v1/seckill/result?order_no=xxx`
+- **认证：** JWT
+- **响应：**
+
+```json
+{
+  "code": 200,
+  "message": "success",
+  "data": {
+    "order_no": "1735286847123456789",
+    "status": "PENDING|SUCCESS|FAILED",
+    "order_status": 0
+  }
+}
+```
+
+- **说明：** 前端轮询本接口直到 `SUCCESS/FAILED`；状态来自 Redis `seckill:result:{order_no}`，由消费者写入
+
+## 7. 库存扣减事件接口（HW5）
+
+库存扣减不再暴露同步 HTTP 接口，而是由 `inventory-service` 消费 `order-events` 主题中 `ORDER_CREATED` 事件触发。同步扣减接口仅保留给管理员调试：
+
+- **POST** `/api/v1/inventory/:product_id/deduct`（**Admin** 鉴权）
+
+业务方应通过 `POST /api/v1/seckill` 间接驱动扣减。
+
+## 8. 网关与基础设施端点（HW6）
+
+### 8.1 网关健康检查
+
+- **GET** `/health` （无论从 Nginx :80 还是 gateway :8000）
+- **响应：** `{"status":"ok","service":"gateway"}` 或对应微服务的 service 名
+
+### 8.2 网关实例池快照
+
+- **GET** `/gateway/instances`
 - **认证：** 无
 - **响应：**
 
 ```json
 {
-  "status": "ok"
+  "order-service":     ["172.18.0.7:8081"],
+  "inventory-service": ["172.18.0.8:8082"],
+  "payment-service":   ["172.18.0.9:8083"]
 }
 ```
+
+用于排查 Nacos 订阅是否正常更新实例列表。
+
+### 8.3 流量治理响应
+
+当请求被 sentinel 拒绝（限流命中或熔断打开），网关返回：
+
+```json
+{
+  "code": 503,
+  "message": "service degraded, please retry later",
+  "resource": "route:seckill",
+  "reason": "BlockTypeFlow"
+}
+```
+
+- `resource` 指明命中的路由资源
+- `reason` 取自 sentinel `BlockType`（`Flow` / `CircuitBreaking` 等）
+
+## 9. 接口归属与 sentinel 资源映射（HW6）
+
+| 路由前缀                   | 归属服务            | 网关 sentinel resource | QPS 阈值 |
+|----------------------------|---------------------|------------------------|----------|
+| `/api/v1/auth`             | order-service       | `route:auth`           | default_qps |
+| `/api/v1/user`             | order-service       | `route:user`           | default_qps |
+| `/api/v1/products`         | order-service       | `route:products`       | default_qps |
+| `/api/v1/orders`           | order-service       | `route:orders`         | default_qps |
+| **`/api/v1/seckill`**      | order-service       | **`route:seckill`**    | **50（含错误率熔断）** |
+| `/api/v1/inventory`        | inventory-service   | `route:inventory`      | default_qps |
+| 健康检查 `/health`         | gateway 自身         | —                      | —          |
+| `/gateway/instances`       | gateway 自身         | —                      | —          |

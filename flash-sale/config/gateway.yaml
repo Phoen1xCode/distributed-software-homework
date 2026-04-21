@@ -1,0 +1,40 @@
+server:
+  port: 8000
+
+nacos:
+  enabled: true
+  host: nacos
+  port: 8848
+  group: DEFAULT_GROUP
+  service_name: gateway
+
+gateway:
+  refresh_ms: 5000
+  routes:
+    # Order paths longer than seckill must be listed first because the
+    # gateway uses longest-prefix match.
+    - path_prefix: /api/v1/seckill
+      service_name: order-service
+      resource: route:seckill
+    - path_prefix: /api/v1/auth
+      service_name: order-service
+      resource: route:auth
+    - path_prefix: /api/v1/user
+      service_name: order-service
+      resource: route:user
+    - path_prefix: /api/v1/products
+      service_name: order-service
+      resource: route:products
+    - path_prefix: /api/v1/orders
+      service_name: order-service
+      resource: route:orders
+    - path_prefix: /api/v1/inventory
+      service_name: inventory-service
+      resource: route:inventory
+  sentinel:
+    seckill_qps: 50
+    seckill_breaker_error_rate: 0.5
+    breaker_min_requests: 10
+    breaker_stat_interval_ms: 10000
+    breaker_retry_timeout_ms: 5000
+    default_qps: 500

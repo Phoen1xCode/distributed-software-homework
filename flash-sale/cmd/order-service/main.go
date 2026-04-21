@@ -12,6 +12,7 @@ import (
 	"flash-sale/pkg/database"
 	"flash-sale/pkg/kafka"
 	"flash-sale/pkg/outbox"
+	"flash-sale/pkg/registry"
 	"flash-sale/pkg/snowflake"
 	"fmt"
 	"log"
@@ -137,6 +138,9 @@ func main() {
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "service": "order-service"})
 	})
+
+	_, deregister := registry.BootstrapService(cfg)
+	defer deregister()
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("Order service starting on %s", addr)

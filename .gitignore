@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+.claude/
+.agent/
+
+.superpowers/
+docs/superpowers/
+
+.vscode/
+.idea/

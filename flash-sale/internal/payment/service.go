@@ -3,7 +3,9 @@ package payment
 import (
 	"encoding/json"
 	"log"
+	"math"
 	"math/rand"
+	"sync/atomic"
 	"time"
 
 	"flash-sale/pkg/event"
@@ -14,16 +16,30 @@ import (
 )
 
 // Service handles payment processing. It listens for PAYMENT_REQUESTED events.
+// successRate is stored as float64 bits in an atomic uint64 so that a Nacos
+// config-change callback can update it from another goroutine without locks.
 type Service struct {
-	db          *gorm.DB
-	successRate float64 // 0.0 to 1.0
+	db              *gorm.DB
+	successRateBits atomic.Uint64
 }
 
 func NewService(db *gorm.DB, successRate float64) *Service {
-	if successRate < 0 || successRate > 1 {
-		successRate = 1.0
+	s := &Service{db: db}
+	s.SetSuccessRate(successRate)
+	return s
+}
+
+// SetSuccessRate updates the simulated payment success probability. Out-of-range
+// values are clamped to 1.0 so config typos do not break the service.
+func (s *Service) SetSuccessRate(rate float64) {
+	if rate < 0 || rate > 1 {
+		rate = 1.0
 	}
-	return &Service{db: db, successRate: successRate}
+	s.successRateBits.Store(math.Float64bits(rate))
+}
+
+func (s *Service) successRate() float64 {
+	return math.Float64frombits(s.successRateBits.Load())
 }
 
 // HandleOrderEvent processes events from the order-events topic.
@@ -51,7 +67,7 @@ func (s *Service) HandleOrderEvent(key, value []byte) error {
 	time.Sleep(time.Duration(delay) * time.Millisecond)
 
 	paymentID := uuid.New().String()
-	success := rand.Float64() < s.successRate
+	success := rand.Float64() < s.successRate()
 
 	var status int16
 	var eventType string

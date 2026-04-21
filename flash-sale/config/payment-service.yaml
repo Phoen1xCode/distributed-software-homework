@@ -24,3 +24,11 @@ outbox:
 
 payment:
   success_rate: 1.0
+
+nacos:
+  enabled: true
+  host: nacos
+  port: 8848
+  group: DEFAULT_GROUP
+  service_name: payment-service
+  data_id: payment.success_rate

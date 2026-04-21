@@ -9,6 +9,7 @@ import (
 	"flash-sale/pkg/database"
 	"flash-sale/pkg/kafka"
 	"flash-sale/pkg/outbox"
+	"flash-sale/pkg/registry"
 	"fmt"
 	"log"
 	"time"
@@ -94,6 +95,9 @@ func main() {
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "service": "inventory-service"})
 	})
+
+	_, deregister := registry.BootstrapService(cfg)
+	defer deregister()
 
 	addr := fmt.Sprintf(":%d", cfg.Server.Port)
 	log.Printf("Inventory service starting on %s", addr)
